@@ -1,0 +1,7 @@
+apiVersion: derecho.poanpan/v1alpha1
+kind: Cascade
+metadata:
+  name: cascade-sample
+spec:
+  # Add fields here
+  size: 5
