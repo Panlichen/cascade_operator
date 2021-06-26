@@ -36,24 +36,52 @@ spec:
           spec:
             description: CascadeSpec defines the desired state of Cascade
             properties:
-              size:
-                description: Size is the size of the memcached deployment
-                format: int32
-                minimum: 0
+              configMap:
+                description: CascadeConfigMap is where the controller gets layout
+                  info for a Cascade instance
+                properties:
+                  jsonItem:
+                    description: jsonItem indicates the name of the layout json file
+                      item inside the ConfigMap
+                    type: string
+                  name:
+                    description: name indicates the name of ConfigMap provided by
+                      the user
+                    type: string
+                required:
+                - jsonItem
+                - name
+                type: object
+              logicalSize:
+                description: logicalSize is the desired logical number of a Cascade
+                  Group
+                format: int64
                 type: integer
             required:
-            - size
+            - configMap
+            - logicalSize
             type: object
           status:
             description: CascadeStatus defines the observed state of Cascade
             properties:
+              logicalSize:
+                description: logicalSize is the logical number of nodes, which means
+                  that overlapped nodes are counted for each appearance
+                format: int64
+                type: integer
               nodes:
-                description: Nodes are the names of the memcached pods
+                description: Nodes are the names of the cascade pods
                 items:
                   type: string
                 type: array
+              realSize:
+                description: realSize is the physical number of nodes.
+                format: int64
+                type: integer
             required:
+            - logicalSize
             - nodes
+            - realSize
             type: object
         type: object
     served: true

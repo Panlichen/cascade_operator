@@ -23,13 +23,22 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// CascadeConfigMap is where the controller gets layout info for a Cascade instance
+type CascadeConfigMap struct {
+	// name indicates the name of ConfigMap provided by the user
+	Name string `json:"name"`
+	// jsonItem indicates the name of the layout json file item inside the ConfigMap
+	JsonItem string `json:"jsonItem"`
+}
+
 // CascadeSpec defines the desired state of Cascade
 type CascadeSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 
-	//+kubebuilder:validation:Minimum=0
-	// Size is the size of the memcached deployment
-	Size int32 `json:"size"`
+	ConfigMap CascadeConfigMap `json:"configMap"`
+
+	// logicalSize is the desired logical number of a Cascade Group
+	LogicalSize int64 `json:"logicalSize"`
 }
 
 // CascadeStatus defines the observed state of Cascade
@@ -37,8 +46,14 @@ type CascadeStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Nodes are the names of the memcached pods
+	// Nodes are the names of the cascade pods
 	Nodes []string `json:"nodes"`
+
+	// realSize is the physical number of nodes.
+	RealSize int64 `json:"realSize"`
+	// logicalSize is the logical number of nodes, which means that overlapped nodes
+	// are counted for each appearance
+	LogicalSize int64 `json:"logicalSize"`
 }
 
 //+kubebuilder:object:root=true
