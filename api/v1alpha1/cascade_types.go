@@ -23,8 +23,8 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// CascadeConfigMap is where the controller gets layout info for a Cascade instance
-type CascadeConfigMap struct {
+// CascadeConfigMapFinder is where the controller gets layout info for a Cascade instance
+type CascadeConfigMapFinder struct {
 	// name indicates the name of ConfigMap provided by the user
 	Name string `json:"name"`
 	// jsonItem indicates the name of the layout json file item inside the ConfigMap
@@ -35,10 +35,13 @@ type CascadeConfigMap struct {
 type CascadeSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 
-	ConfigMap CascadeConfigMap `json:"configMap"`
+	ConfigMapFinder CascadeConfigMapFinder `json:"configMapFinder"`
 
-	// logicalSize is the desired logical number of a Cascade Group
-	LogicalSize int64 `json:"logicalSize"`
+	// logicalServerSize is the desired logical server number of a Cascade Group
+	LogicalServerSize int64 `json:"logicalServerSize"`
+
+	// clientSize is the desired client number of a Cascade Group
+	ClientSize int64 `json:"clientSize"`
 }
 
 // CascadeStatus defines the observed state of Cascade
@@ -49,11 +52,14 @@ type CascadeStatus struct {
 	// Nodes are the names of the cascade pods
 	Nodes []string `json:"nodes"`
 
-	// realSize is the physical number of nodes.
-	RealSize int64 `json:"realSize"`
-	// logicalSize is the logical number of nodes, which means that overlapped nodes
-	// are counted for each appearance
-	LogicalSize int64 `json:"logicalSize"`
+	// realServerSize is the physical number of server nodes.
+	RealServerSize int64 `json:"realServerSize"`
+	// logicalServerSize is the logical number of server nodes, which means that overlapped nodes
+	// are counted for each appearance.
+	LogicalServerSize int64 `json:"logicalServerSize"`
+
+	// clientSize is current number of client nodes.
+	ClientSize int64 `json:"clientSize"`
 }
 
 //+kubebuilder:object:root=true

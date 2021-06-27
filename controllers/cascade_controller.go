@@ -17,10 +17,13 @@ limitations under the License.
 package controllers
 
 import (
+	"fmt"
 	"reflect"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/json"
 
 	"context"
 
@@ -35,7 +38,8 @@ import (
 // CascadeReconciler reconciles a cascade object
 type CascadeReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme         *runtime.Scheme
+	NodeManagerMap map[string]*derechov1alpha1.CascadeNodeManager
 }
 
 //+kubebuilder:rbac:groups=derecho.poanpan,resources=cascades,verbs=get;list;watch;create;update;patch;delete
@@ -44,9 +48,9 @@ type CascadeReconciler struct {
 //+kubebuilder:rbac:groups=derecho.poanpan,resources=cascadenodemanagers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=derecho.poanpan,resources=cascadenodemanagers/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=derecho.poanpan,resources=cascadenodemanagers/finalizers,verbs=update
-//+kubebuilder:rbac:groups=apps,resources=services,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
-//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;update
+//+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -80,7 +84,11 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	headless_service := &v1.Service{}
 	err = r.Get(ctx, req.NamespacedName, headless_service)
 	if err != nil && errors.IsNotFound(err) {
-		// Parse the configMap, create pods and the headless service
+		// Parse the configMap, create pods and the headless service, allocate memory for CascadeReconciler.NodeManager
+		// TODO: create the CascadeNodeManager CR
+		r.NodeManagerMap[req.Name] = new(derechov1alpha1.CascadeNodeManager)
+		configMapFinder := cascade.Spec.ConfigMapFinder.DeepCopy()
+		r.createNodeManager(ctx, req.NamespacedName, configMapFinder)
 	}
 
 	// Update the cascade status with the pod names
@@ -109,6 +117,36 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, nil
 }
 
+// createNodeManager parse the json from the configMap user defined
+func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo types.NamespacedName, configMapFinder *derechov1alpha1.CascadeConfigMapFinder) {
+	log := ctrllog.FromContext(ctx)
+	log.Info("Enter createNodeManager")
+	realConfigMap := &v1.ConfigMap{}
+	err := r.Get(ctx, types.NamespacedName{Namespace: cascadeInfo.Namespace, Name: configMapFinder.Name}, realConfigMap)
+	if err != nil {
+		// TODO: do something
+	}
+	jsonStr := realConfigMap.Data[configMapFinder.JsonItem]
+	log.Info(fmt.Sprintf("Get the jsonStr with length %v", len(jsonStr)))
+	jsonStr = "\"typesSpec\": " + jsonStr
+	log.Info(fmt.Sprintf("Get the patched jsonStr with length %v", len(jsonStr)))
+	log.Info(fmt.Sprintf("The patched jsonStr is: %v", jsonStr))
+
+	// Allocate Memory
+	r.NodeManagerMap[cascadeInfo.Name] = new(derechov1alpha1.CascadeNodeManager)
+	r.NodeManagerMap[cascadeInfo.Name].Spec = derechov1alpha1.CascadeNodeManagerSpec{}
+	r.NodeManagerMap[cascadeInfo.Name].Status = derechov1alpha1.CascadeNodeManagerStatus{}
+
+	log.Info(fmt.Sprintf("Create an entry in NodeManagerMap, new cascade: %+v", cascadeInfo))
+
+	json.Unmarshal([]byte(jsonStr), r.NodeManagerMap[cascadeInfo.Name].Spec)
+	log.Info(fmt.Sprintf("Unmarshal done, parse %v types", len(r.NodeManagerMap[cascadeInfo.Name].Spec.TypesSpec)))
+	for seq, cascadeType := range r.NodeManagerMap[cascadeInfo.Name].Spec.TypesSpec {
+		log.Info(fmt.Sprintf("Type %v has configuration %v with length %v", seq, cascadeType.String(), len(cascadeType.String())))
+	}
+
+}
+
 // labelsForCascade returns the labels for selecting the resources
 // belonging to the given cascade CR name.
 func labelsForCascade(name string) map[string]string {
@@ -128,6 +166,8 @@ func getPodNames(pods []v1.Pod) []string {
 func (r *CascadeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	// TODO: start prometheus and layout watcher here.
+
+	r.NodeManagerMap = make(map[string]*derechov1alpha1.CascadeNodeManager)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&derechov1alpha1.Cascade{}).

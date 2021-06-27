@@ -36,8 +36,13 @@ spec:
           spec:
             description: CascadeSpec defines the desired state of Cascade
             properties:
-              configMap:
-                description: CascadeConfigMap is where the controller gets layout
+              clientSize:
+                description: clientSize is the desired client number of a Cascade
+                  Group
+                format: int64
+                type: integer
+              configMapFinder:
+                description: CascadeConfigMapFinder is where the controller gets layout
                   info for a Cascade instance
                 properties:
                   jsonItem:
@@ -52,21 +57,26 @@ spec:
                 - jsonItem
                 - name
                 type: object
-              logicalSize:
-                description: logicalSize is the desired logical number of a Cascade
-                  Group
+              logicalServerSize:
+                description: logicalServerSize is the desired logical server number
+                  of a Cascade Group
                 format: int64
                 type: integer
             required:
-            - configMap
-            - logicalSize
+            - clientSize
+            - configMapFinder
+            - logicalServerSize
             type: object
           status:
             description: CascadeStatus defines the observed state of Cascade
             properties:
-              logicalSize:
-                description: logicalSize is the logical number of nodes, which means
-                  that overlapped nodes are counted for each appearance
+              clientSize:
+                description: clientSize is current number of client nodes.
+                format: int64
+                type: integer
+              logicalServerSize:
+                description: logicalServerSize is the logical number of server nodes,
+                  which means that overlapped nodes are counted for each appearance.
                 format: int64
                 type: integer
               nodes:
@@ -74,14 +84,15 @@ spec:
                 items:
                   type: string
                 type: array
-              realSize:
-                description: realSize is the physical number of nodes.
+              realServerSize:
+                description: realServerSize is the physical number of server nodes.
                 format: int64
                 type: integer
             required:
-            - logicalSize
+            - clientSize
+            - logicalServerSize
             - nodes
-            - realSize
+            - realServerSize
             type: object
         type: object
     served: true

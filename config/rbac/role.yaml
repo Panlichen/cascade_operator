@@ -11,12 +11,17 @@ rules:
   resources:
   - configmaps
   verbs:
+  - create
+  - delete
   - get
+  - list
+  - patch
   - update
+  - watch
 - apiGroups:
-  - apps
+  - ""
   resources:
-  - deployments
+  - services
   verbs:
   - create
   - delete
@@ -30,9 +35,39 @@ rules:
   resources:
   - pods
   verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
+- apiGroups:
+  - derecho.poanpan
+  resources:
+  - cascadenodemanagers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - derecho.poanpan
+  resources:
+  - cascadenodemanagers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - derecho.poanpan
+  resources:
+  - cascadenodemanagers/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - derecho.poanpan
   resources:

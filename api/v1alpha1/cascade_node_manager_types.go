@@ -18,31 +18,26 @@ package v1alpha1
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-// CascadeShardLayout is the detail layout and other configurate for a shard
-type CascadeShardLayout struct {
-	// minNodes is minNodes for a shard
-	MinNodes int64 `json:"minNodes"`
-	// maxNodes is maxNodes for a shard
-	MaxNodes int64 `json:"maxNodes"`
-	// reservedNodeId is reservedNodeId for a shard
-	ReservedNodeId []int64 `json:"reservedNodeId"`
-	// deliveryMode is deliveryMode for a shard
-	DeliveryMode string `json:"deliveryMode"`
-	// profile is profile for a shard
-	Profile string `json:"profile"`
-	// assignedNodeId is assignedNodeId for a shard, omitted in spec, maintained in status
-	AssignedNodeId []int64 `json:"assignedNodeId,omitempty"`
-}
-
 // CascadeSubgroupLayout wraps configuration for each shard in a subgroup
 type CascadeSubgroupLayout struct {
-	ShardLayout []CascadeShardLayout `json:"shardLayout"`
+	// min_nodes_by_shard is minNodes for each shard
+	MinNodesByShard []int64 `json:"min_nodes_by_shard"`
+	// max_nodes_by_shard is maxNodes for each shard
+	MaxNodesByShard []int64 `json:"max_nodes_by_shard"`
+	// reserved_node_id_by_shard is reservedNodeId for each shard, not mandatory
+	ReservedNodeIdByShard [][]int64 `json:"reserved_node_id_by_shard,omitempty"`
+	// delivery_modes_by_shard is deliveryMode for each shard
+	DeliveryModesByShard []string `json:"delivery_modes_by_shard"`
+	// profiles_by_shard is profile for each shard
+	ProfilesByShard []string `json:"profiles_by_shard"`
+	// assigned_node_id_by_shard is assignedNodeId for each shard, omitted in spec, maintained in status
+	AssignedNodeIdByShard [][]int64 `json:"assigned_node_id_by_shard,omitempty"`
 }
 
 // CascadeType wraps configuration for each subgroup for a type
 type CascadeType struct {
 	// typeAlias is the name for a type
-	TypeAlias      string                  `json:"typeAlias"`
+	TypeAlias      string                  `json:"type_alias"`
 	SubgroupLayout []CascadeSubgroupLayout `json:"layout"`
 }
 

@@ -47,58 +47,60 @@ spec:
                         description: CascadeSubgroupLayout wraps configuration for
                           each shard in a subgroup
                         properties:
-                          shardLayout:
+                          assigned_node_id_by_shard:
+                            description: assigned_node_id_by_shard is assignedNodeId
+                              for each shard, omitted in spec, maintained in status
                             items:
-                              description: CascadeShardLayout is the detail layout
-                                and other configurate for a shard
-                              properties:
-                                assignedNodeId:
-                                  description: assignedNodeId is assignedNodeId for
-                                    a shard, omitted in spec, maintained in status
-                                  items:
-                                    format: int64
-                                    type: integer
-                                  type: array
-                                deliveryMode:
-                                  description: deliveryMode is deliveryMode for a
-                                    shard
-                                  type: string
-                                maxNodes:
-                                  description: maxNodes is maxNodes for a shard
-                                  format: int64
-                                  type: integer
-                                minNodes:
-                                  description: minNodes is minNodes for a shard
-                                  format: int64
-                                  type: integer
-                                profile:
-                                  description: profile is profile for a shard
-                                  type: string
-                                reservedNodeId:
-                                  description: reservedNodeId is reservedNodeId for
-                                    a shard
-                                  items:
-                                    format: int64
-                                    type: integer
-                                  type: array
-                              required:
-                              - deliveryMode
-                              - maxNodes
-                              - minNodes
-                              - profile
-                              - reservedNodeId
-                              type: object
+                              items:
+                                format: int64
+                                type: integer
+                              type: array
+                            type: array
+                          delivery_modes_by_shard:
+                            description: delivery_modes_by_shard is deliveryMode for
+                              each shard
+                            items:
+                              type: string
+                            type: array
+                          max_nodes_by_shard:
+                            description: max_nodes_by_shard is maxNodes for each shard
+                            items:
+                              format: int64
+                              type: integer
+                            type: array
+                          min_nodes_by_shard:
+                            description: min_nodes_by_shard is minNodes for each shard
+                            items:
+                              format: int64
+                              type: integer
+                            type: array
+                          profiles_by_shard:
+                            description: profiles_by_shard is profile for each shard
+                            items:
+                              type: string
+                            type: array
+                          reserved_node_id_by_shard:
+                            description: reserved_node_id_by_shard is reservedNodeId
+                              for each shard, not mandatory
+                            items:
+                              items:
+                                format: int64
+                                type: integer
+                              type: array
                             type: array
                         required:
-                        - shardLayout
+                        - delivery_modes_by_shard
+                        - max_nodes_by_shard
+                        - min_nodes_by_shard
+                        - profiles_by_shard
                         type: object
                       type: array
-                    typeAlias:
+                    type_alias:
                       description: typeAlias is the name for a type
                       type: string
                   required:
                   - layout
-                  - typeAlias
+                  - type_alias
                   type: object
                 type: array
             required:
@@ -126,58 +128,60 @@ spec:
                         description: CascadeSubgroupLayout wraps configuration for
                           each shard in a subgroup
                         properties:
-                          shardLayout:
+                          assigned_node_id_by_shard:
+                            description: assigned_node_id_by_shard is assignedNodeId
+                              for each shard, omitted in spec, maintained in status
                             items:
-                              description: CascadeShardLayout is the detail layout
-                                and other configurate for a shard
-                              properties:
-                                assignedNodeId:
-                                  description: assignedNodeId is assignedNodeId for
-                                    a shard, omitted in spec, maintained in status
-                                  items:
-                                    format: int64
-                                    type: integer
-                                  type: array
-                                deliveryMode:
-                                  description: deliveryMode is deliveryMode for a
-                                    shard
-                                  type: string
-                                maxNodes:
-                                  description: maxNodes is maxNodes for a shard
-                                  format: int64
-                                  type: integer
-                                minNodes:
-                                  description: minNodes is minNodes for a shard
-                                  format: int64
-                                  type: integer
-                                profile:
-                                  description: profile is profile for a shard
-                                  type: string
-                                reservedNodeId:
-                                  description: reservedNodeId is reservedNodeId for
-                                    a shard
-                                  items:
-                                    format: int64
-                                    type: integer
-                                  type: array
-                              required:
-                              - deliveryMode
-                              - maxNodes
-                              - minNodes
-                              - profile
-                              - reservedNodeId
-                              type: object
+                              items:
+                                format: int64
+                                type: integer
+                              type: array
+                            type: array
+                          delivery_modes_by_shard:
+                            description: delivery_modes_by_shard is deliveryMode for
+                              each shard
+                            items:
+                              type: string
+                            type: array
+                          max_nodes_by_shard:
+                            description: max_nodes_by_shard is maxNodes for each shard
+                            items:
+                              format: int64
+                              type: integer
+                            type: array
+                          min_nodes_by_shard:
+                            description: min_nodes_by_shard is minNodes for each shard
+                            items:
+                              format: int64
+                              type: integer
+                            type: array
+                          profiles_by_shard:
+                            description: profiles_by_shard is profile for each shard
+                            items:
+                              type: string
+                            type: array
+                          reserved_node_id_by_shard:
+                            description: reserved_node_id_by_shard is reservedNodeId
+                              for each shard, not mandatory
+                            items:
+                              items:
+                                format: int64
+                                type: integer
+                              type: array
                             type: array
                         required:
-                        - shardLayout
+                        - delivery_modes_by_shard
+                        - max_nodes_by_shard
+                        - min_nodes_by_shard
+                        - profiles_by_shard
                         type: object
                       type: array
-                    typeAlias:
+                    type_alias:
                       description: typeAlias is the name for a type
                       type: string
                   required:
                   - layout
-                  - typeAlias
+                  - type_alias
                   type: object
                 type: array
             required:
