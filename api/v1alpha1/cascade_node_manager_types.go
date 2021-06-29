@@ -21,17 +21,17 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // CascadeSubgroupLayout wraps configuration for each shard in a subgroup
 type CascadeSubgroupLayout struct {
 	// min_nodes_by_shard is minNodes for each shard
-	MinNodesByShard []int64 `json:"min_nodes_by_shard"`
+	MinNodesByShard []int `json:"min_nodes_by_shard"`
 	// max_nodes_by_shard is maxNodes for each shard
-	MaxNodesByShard []int64 `json:"max_nodes_by_shard"`
+	MaxNodesByShard []int `json:"max_nodes_by_shard"`
 	// reserved_node_id_by_shard is reservedNodeId for each shard, not mandatory
-	ReservedNodeIdByShard [][]int64 `json:"reserved_node_id_by_shard,omitempty"`
+	ReservedNodeIdByShard [][]int `json:"reserved_node_id_by_shard,omitempty"`
 	// delivery_modes_by_shard is deliveryMode for each shard
 	DeliveryModesByShard []string `json:"delivery_modes_by_shard"`
 	// profiles_by_shard is profile for each shard
 	ProfilesByShard []string `json:"profiles_by_shard"`
 	// assigned_node_id_by_shard is assignedNodeId for each shard, omitted in spec, maintained in status
-	AssignedNodeIdByShard [][]int64 `json:"assigned_node_id_by_shard,omitempty"`
+	AssignedNodeIdByShard [][]int `json:"assigned_node_id_by_shard,omitempty"`
 }
 
 // CascadeType wraps configuration for each subgroup for a type
@@ -49,11 +49,13 @@ type CascadeNodeManagerSpec struct {
 type CascadeNodeManagerStatus struct {
 	TypesStatus []CascadeType `json:"typesStatus"`
 
+	// TODO: add some filed to manage node_ids reserved for overlapping after we know clearly how to make use of overlapped shards.
+
 	// maxReservedNodeId is the max reserved node id calculated from configMap
-	MaxReservedNodeId int64 `json:"maxReservedNodeId"`
+	MaxReservedNodeId int `json:"maxReservedNodeId"`
 
 	// nextNodeIdToAssign is the next non-reserved node id to assign
-	NextNodeIdToAssign int64 `json:"nextNodeIdToAssign"`
+	NextNodeIdToAssign int `json:"nextNodeIdToAssign"`
 }
 
 //+kubebuilder:object:root=true

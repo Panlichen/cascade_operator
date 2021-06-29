@@ -38,10 +38,10 @@ type CascadeSpec struct {
 	ConfigMapFinder CascadeConfigMapFinder `json:"configMapFinder"`
 
 	// logicalServerSize is the desired logical server number of a Cascade Group
-	LogicalServerSize int64 `json:"logicalServerSize"`
+	LogicalServerSize int `json:"logicalServerSize"`
 
 	// clientSize is the desired client number of a Cascade Group
-	ClientSize int64 `json:"clientSize"`
+	ClientSize int `json:"clientSize"`
 }
 
 // CascadeStatus defines the observed state of Cascade
@@ -52,14 +52,14 @@ type CascadeStatus struct {
 	// Nodes are the names of the cascade pods
 	Nodes []string `json:"nodes"`
 
-	// realServerSize is the physical number of server nodes.
-	RealServerSize int64 `json:"realServerSize"`
+	// physicalServerSize is the physical number of server nodes.
+	PhysicalServerSize int `json:"physicalServerSize"`
 	// logicalServerSize is the logical number of server nodes, which means that overlapped nodes
 	// are counted for each appearance.
-	LogicalServerSize int64 `json:"logicalServerSize"`
+	LogicalServerSize int `json:"logicalServerSize"`
 
 	// clientSize is current number of client nodes.
-	ClientSize int64 `json:"clientSize"`
+	ClientSize int `json:"clientSize"`
 }
 
 //+kubebuilder:object:root=true

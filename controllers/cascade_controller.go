@@ -135,8 +135,7 @@ func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo t
 	// Allocate Memory
 	r.NodeManagerMap[cascadeInfo.Name] = new(derechov1alpha1.CascadeNodeManager)
 
-	log.Info(fmt.Sprintf("Create an entry in NodeManagerMap for new cascade: %+v", cascadeInfo))
-	log.Info(fmt.Sprintf("r.NodeManagerMap[%v].Spec has type %T", cascadeInfo.Name, r.NodeManagerMap[cascadeInfo.Name].Spec))
+	log.Info(fmt.Sprintf("Create an entry in NodeManagerMap for new Cascade: %+v", cascadeInfo))
 
 	json.Unmarshal([]byte(jsonStr), &r.NodeManagerMap[cascadeInfo.Name].Spec)
 	log.Info(fmt.Sprintf("Unmarshal done, parse %v types", len(r.NodeManagerMap[cascadeInfo.Name].Spec.TypesSpec)))
@@ -144,6 +143,37 @@ func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo t
 		log.Info(fmt.Sprintf("Type %v has configuration %v", seq, cascadeType.String()))
 	}
 
+	r.NodeManagerMap[cascadeInfo.Name].Status.TypesStatus = r.NodeManagerMap[cascadeInfo.Name].Spec.DeepCopy().TypesSpec
+
+	maxReservedNodeId := -1
+	for typeSeq, cascadeType := range r.NodeManagerMap[cascadeInfo.Name].Status.TypesStatus {
+		for subgroupSeq, subgroupLayout := range cascadeType.SubgroupLayout {
+			shardNum := len(subgroupLayout.MinNodesByShard)
+			log.Info(fmt.Sprintf("For type #%v(%v), subgroup #%v, shard num is %v",
+				typeSeq, cascadeType.TypeAlias, subgroupSeq, shardNum))
+			subgroupLayout.AssignedNodeIdByShard = make([][]int, shardNum)
+
+			// if the user assigned reserved node_ids
+			if len(subgroupLayout.ReservedNodeIdByShard) == shardNum {
+				for shardSeq, reservedNodeIds := range subgroupLayout.ReservedNodeIdByShard {
+					log.Info(fmt.Sprintf("For type #%v(%v), subgroup #%v, shard #%v reserves %v nodes: %+v",
+						typeSeq, cascadeType.TypeAlias, subgroupSeq, shardSeq, len(reservedNodeIds), reservedNodeIds))
+
+					for _, reservedNodeId := range reservedNodeIds {
+						if maxReservedNodeId <= reservedNodeId {
+							maxReservedNodeId = reservedNodeId
+						}
+					}
+				}
+			}
+		}
+	}
+
+	r.NodeManagerMap[cascadeInfo.Name].Status.MaxReservedNodeId = maxReservedNodeId
+	r.NodeManagerMap[cascadeInfo.Name].Status.NextNodeIdToAssign = maxReservedNodeId + 1
+	log.Info(fmt.Sprintf("For Cascade %+v, max reserved node id is %v, next node id to assign is %v", cascadeInfo,
+		r.NodeManagerMap[cascadeInfo.Name].Status.MaxReservedNodeId,
+		r.NodeManagerMap[cascadeInfo.Name].Status.NextNodeIdToAssign))
 }
 
 // labelsForCascade returns the labels for selecting the resources

@@ -52,7 +52,6 @@ spec:
                               for each shard, omitted in spec, maintained in status
                             items:
                               items:
-                                format: int64
                                 type: integer
                               type: array
                             type: array
@@ -65,13 +64,11 @@ spec:
                           max_nodes_by_shard:
                             description: max_nodes_by_shard is maxNodes for each shard
                             items:
-                              format: int64
                               type: integer
                             type: array
                           min_nodes_by_shard:
                             description: min_nodes_by_shard is minNodes for each shard
                             items:
-                              format: int64
                               type: integer
                             type: array
                           profiles_by_shard:
@@ -84,7 +81,6 @@ spec:
                               for each shard, not mandatory
                             items:
                               items:
-                                format: int64
                                 type: integer
                               type: array
                             type: array
@@ -111,12 +107,10 @@ spec:
               maxReservedNodeId:
                 description: maxReservedNodeId is the max reserved node id calculated
                   from configMap
-                format: int64
                 type: integer
               nextNodeIdToAssign:
                 description: nextNodeIdToAssign is the next non-reserved node id to
                   assign
-                format: int64
                 type: integer
               typesStatus:
                 items:
@@ -133,7 +127,6 @@ spec:
                               for each shard, omitted in spec, maintained in status
                             items:
                               items:
-                                format: int64
                                 type: integer
                               type: array
                             type: array
@@ -146,13 +139,11 @@ spec:
                           max_nodes_by_shard:
                             description: max_nodes_by_shard is maxNodes for each shard
                             items:
-                              format: int64
                               type: integer
                             type: array
                           min_nodes_by_shard:
                             description: min_nodes_by_shard is minNodes for each shard
                             items:
-                              format: int64
                               type: integer
                             type: array
                           profiles_by_shard:
@@ -165,7 +156,6 @@ spec:
                               for each shard, not mandatory
                             items:
                               items:
-                                format: int64
                                 type: integer
                               type: array
                             type: array

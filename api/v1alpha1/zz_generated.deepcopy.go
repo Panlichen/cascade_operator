@@ -242,21 +242,21 @@ func (in *CascadeSubgroupLayout) DeepCopyInto(out *CascadeSubgroupLayout) {
 	*out = *in
 	if in.MinNodesByShard != nil {
 		in, out := &in.MinNodesByShard, &out.MinNodesByShard
-		*out = make([]int64, len(*in))
+		*out = make([]int, len(*in))
 		copy(*out, *in)
 	}
 	if in.MaxNodesByShard != nil {
 		in, out := &in.MaxNodesByShard, &out.MaxNodesByShard
-		*out = make([]int64, len(*in))
+		*out = make([]int, len(*in))
 		copy(*out, *in)
 	}
 	if in.ReservedNodeIdByShard != nil {
 		in, out := &in.ReservedNodeIdByShard, &out.ReservedNodeIdByShard
-		*out = make([][]int64, len(*in))
+		*out = make([][]int, len(*in))
 		for i := range *in {
 			if (*in)[i] != nil {
 				in, out := &(*in)[i], &(*out)[i]
-				*out = make([]int64, len(*in))
+				*out = make([]int, len(*in))
 				copy(*out, *in)
 			}
 		}
@@ -273,11 +273,11 @@ func (in *CascadeSubgroupLayout) DeepCopyInto(out *CascadeSubgroupLayout) {
 	}
 	if in.AssignedNodeIdByShard != nil {
 		in, out := &in.AssignedNodeIdByShard, &out.AssignedNodeIdByShard
-		*out = make([][]int64, len(*in))
+		*out = make([][]int, len(*in))
 		for i := range *in {
 			if (*in)[i] != nil {
 				in, out := &(*in)[i], &(*out)[i]
-				*out = make([]int64, len(*in))
+				*out = make([]int, len(*in))
 				copy(*out, *in)
 			}
 		}
