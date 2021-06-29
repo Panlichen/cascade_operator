@@ -128,21 +128,20 @@ func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo t
 	}
 	jsonStr := realConfigMap.Data[configMapFinder.JsonItem]
 	log.Info(fmt.Sprintf("Get the jsonStr with length %v", len(jsonStr)))
-	jsonStr = "\"typesSpec\": " + jsonStr
+	jsonStr = "{\"typesSpec\": " + jsonStr + "}"
 	log.Info(fmt.Sprintf("Get the patched jsonStr with length %v", len(jsonStr)))
 	log.Info(fmt.Sprintf("The patched jsonStr is: %v", jsonStr))
 
 	// Allocate Memory
 	r.NodeManagerMap[cascadeInfo.Name] = new(derechov1alpha1.CascadeNodeManager)
-	r.NodeManagerMap[cascadeInfo.Name].Spec = derechov1alpha1.CascadeNodeManagerSpec{}
-	r.NodeManagerMap[cascadeInfo.Name].Status = derechov1alpha1.CascadeNodeManagerStatus{}
 
-	log.Info(fmt.Sprintf("Create an entry in NodeManagerMap, new cascade: %+v", cascadeInfo))
+	log.Info(fmt.Sprintf("Create an entry in NodeManagerMap for new cascade: %+v", cascadeInfo))
+	log.Info(fmt.Sprintf("r.NodeManagerMap[%v].Spec has type %T", cascadeInfo.Name, r.NodeManagerMap[cascadeInfo.Name].Spec))
 
-	json.Unmarshal([]byte(jsonStr), r.NodeManagerMap[cascadeInfo.Name].Spec)
+	json.Unmarshal([]byte(jsonStr), &r.NodeManagerMap[cascadeInfo.Name].Spec)
 	log.Info(fmt.Sprintf("Unmarshal done, parse %v types", len(r.NodeManagerMap[cascadeInfo.Name].Spec.TypesSpec)))
 	for seq, cascadeType := range r.NodeManagerMap[cascadeInfo.Name].Spec.TypesSpec {
-		log.Info(fmt.Sprintf("Type %v has configuration %v with length %v", seq, cascadeType.String(), len(cascadeType.String())))
+		log.Info(fmt.Sprintf("Type %v has configuration %v", seq, cascadeType.String()))
 	}
 
 }
