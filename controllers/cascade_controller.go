@@ -17,17 +17,18 @@ limitations under the License.
 package controllers
 
 import (
+	"context"
+	goerrors "errors"
 	"fmt"
 	"reflect"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
-
-	"context"
-
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -41,6 +42,10 @@ type CascadeReconciler struct {
 	Scheme         *runtime.Scheme
 	NodeManagerMap map[string]*derechov1alpha1.CascadeNodeManager
 }
+
+const (
+	selectorKey string = "cascadeName"
+)
 
 //+kubebuilder:rbac:groups=derecho.poanpan,resources=cascades,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=derecho.poanpan,resources=cascades/status,verbs=get;update;patch
@@ -63,7 +68,7 @@ type CascadeReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.8.3/pkg/reconcile
 func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
-
+	log.Info("\n\n\n\t\t*** Entering Reconile Logic ***\n\n")
 	// Fetch the cascade instance
 	cascade := &derechov1alpha1.Cascade{}
 	err := r.Get(ctx, req.NamespacedName, cascade)
@@ -81,14 +86,29 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Check if the headless service exists, which reflects the status of corresponding pods
+	// !!!TODO: maybe it is more reasonable to check the size info from cascade status?
+	// !!!TODO: delete
 	headless_service := &v1.Service{}
 	err = r.Get(ctx, req.NamespacedName, headless_service)
 	if err != nil && errors.IsNotFound(err) {
+		log.Info(fmt.Sprintf("Create the Headless Service and Pods for Cascade %v", cascade.Name))
 		// Parse the configMap, create pods and the headless service, allocate memory for CascadeReconciler.NodeManager
 		// TODO: create the CascadeNodeManager CR
 		r.NodeManagerMap[req.Name] = new(derechov1alpha1.CascadeNodeManager)
 		configMapFinder := cascade.Spec.ConfigMapFinder.DeepCopy()
 		r.createNodeManager(ctx, req.NamespacedName, configMapFinder)
+
+		// Check if the user request enough logical nodes to satisfy the Cascade's need according to the json layout file
+		checkStat, checkErr := r.checkLogicalNodesRequest(cascade)
+		if !checkStat {
+			log.Error(checkErr, "Has Not Requested enough")
+			return ctrl.Result{}, checkErr
+		}
+
+		r.createHeadlessService(ctx, cascade)
+
+		r.createPods(ctx, cascade.Spec.LogicalServerSize, cascade, true)
+		r.createPods(ctx, cascade.Spec.ClientSize, cascade, false)
 	}
 
 	// Update the cascade status with the pod names
@@ -117,10 +137,151 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, nil
 }
 
+func (r *CascadeReconciler) createHeadlessService(ctx context.Context, cascade *derechov1alpha1.Cascade) error {
+
+	log := ctrllog.FromContext(ctx)
+
+	// create a headless service to provide fqdn
+	serviceSelector := make(map[string]string)
+	serviceSelector[selectorKey] = cascade.Name
+	headlessService := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cascade.Name,
+			Namespace: cascade.Namespace,
+		},
+		Spec: v1.ServiceSpec{
+			Selector:  serviceSelector,
+			ClusterIP: "None",
+		},
+	}
+
+	err := r.Create(ctx, headlessService)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Failed to create headless service %v/%v", cascade.Namespace, cascade.Name))
+		return err
+	}
+	log.Info(fmt.Sprintf("Create a headless service for Cascade %v successfully.", cascade.Name))
+
+	return nil
+}
+
+func (r *CascadeReconciler) createPods(ctx context.Context, createCnt int, cascade *derechov1alpha1.Cascade, isServer bool) error {
+
+	log := ctrllog.FromContext(ctx)
+	// TODO: here we use the un-reserved nodes directly. After we determine how to use reserved and overlapped node ids, we need to redesign this function
+	nodeId := r.NodeManagerMap[cascade.Name].Status.NextNodeIdToAssign
+	serviceSelector := make(map[string]string)
+	serviceSelector[selectorKey] = cascade.Name
+
+	// create pods as needed
+	for i := 0; i < createCnt; i++ {
+		podName := cascade.Name + "-" + fmt.Sprint(nodeId)
+		// update the temporary variable, not to update r.NodeManagerMap[cascade.Name].Status.NextNodeIdToAssign until all pods are created successfully
+		nodeId++
+
+		log.Info(fmt.Sprintf("Prepare to create pod %v", podName))
+
+		pod := &v1.Pod{}
+		if isServer {
+			pod = &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      podName,
+					Namespace: cascade.Namespace,
+					Labels:    serviceSelector,
+				},
+				Spec: v1.PodSpec{
+					Hostname:  podName,
+					Subdomain: cascade.Name,
+					Containers: []v1.Container{{
+						Image: "poanpan/cascade:upgrade-cascade-gpu",
+						Name:  "cascade",
+						// TODO: change command to start server
+						Command: []string{"sh", "-c", "/usr/sbin/sshd && sleep 2592000"},
+						Resources: v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:         resource.MustParse("2"),
+								v1.ResourceMemory:      resource.MustParse("8Gi"),
+								"openshift.io/mlx5_vf": resource.MustParse("1"),
+							},
+							Limits: v1.ResourceList{
+								v1.ResourceCPU:         resource.MustParse("10"),
+								v1.ResourceMemory:      resource.MustParse("20Gi"),
+								"openshift.io/mlx5_vf": resource.MustParse("1")},
+						},
+					}},
+					// the default container RestartPolicy is Always, very well.
+				},
+			}
+		} else {
+			pod = &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      podName,
+					Namespace: cascade.Namespace,
+					Labels:    serviceSelector,
+				},
+				Spec: v1.PodSpec{
+					Hostname:  podName,
+					Subdomain: cascade.Name,
+					Containers: []v1.Container{{
+						// TODO: need a light client image
+						Image: "poanpan/cascade:upgrade-cascade-gpu",
+						Name:  "cascade",
+						// TODO: change command to start client
+						Command: []string{"sh", "-c", "/usr/sbin/sshd && sleep 2592000"},
+						Resources: v1.ResourceRequirements{
+							// TODO: client need less resource
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:         resource.MustParse("2"),
+								v1.ResourceMemory:      resource.MustParse("8Gi"),
+								"openshift.io/mlx5_vf": resource.MustParse("1"),
+							},
+							Limits: v1.ResourceList{
+								v1.ResourceCPU:         resource.MustParse("10"),
+								v1.ResourceMemory:      resource.MustParse("20Gi"),
+								"openshift.io/mlx5_vf": resource.MustParse("1")},
+						},
+					}},
+					// the default container RestartPolicy is Always, very well.
+				},
+			}
+		}
+		err := r.Create(ctx, pod)
+		if err != nil {
+			log.Error(err, fmt.Sprintf("Failed to create pod %v/%v", cascade.Namespace, podName))
+			return err
+		}
+		log.Info(fmt.Sprintf("Create pod %v for Cascade %v successfully", podName, cascade.Name))
+		// update cascade.Status.LogicalServerSize
+		if isServer {
+			// TODO: consider update cascade.Status.PhysicalServerSize
+			cascade.Status.LogicalServerSize = createCnt
+		} else {
+			cascade.Status.ClientSize = createCnt
+		}
+		err = r.Status().Update(ctx, cascade)
+		if err != nil {
+			log.Error(err, "Failed to update cascade status")
+			return err
+		}
+	}
+
+	// after assign nodes, update NextNodeIdToAssign status for current Cascade.
+	r.NodeManagerMap[cascade.Name].Status.NextNodeIdToAssign = nodeId
+
+	return nil
+}
+
+func (r *CascadeReconciler) checkLogicalNodesRequest(cascade *derechov1alpha1.Cascade) (bool, error) {
+	if cascade.Spec.LogicalServerSize >= r.NodeManagerMap[cascade.Name].Status.LeastRequiredLogicalNodes {
+		return true, nil
+	} else {
+		return false, goerrors.New("Not Request Enough Logical Nodes")
+	}
+}
+
 // createNodeManager parse the json from the configMap user defined
 func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo types.NamespacedName, configMapFinder *derechov1alpha1.CascadeConfigMapFinder) {
 	log := ctrllog.FromContext(ctx)
-	log.Info("Enter createNodeManager")
 	realConfigMap := &v1.ConfigMap{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: cascadeInfo.Namespace, Name: configMapFinder.Name}, realConfigMap)
 	if err != nil {
@@ -146,6 +307,7 @@ func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo t
 	r.NodeManagerMap[cascadeInfo.Name].Status.TypesStatus = r.NodeManagerMap[cascadeInfo.Name].Spec.DeepCopy().TypesSpec
 
 	maxReservedNodeId := -1
+	leastRequiredLogicalNodes := 0
 	for typeSeq, cascadeType := range r.NodeManagerMap[cascadeInfo.Name].Status.TypesStatus {
 		for subgroupSeq, subgroupLayout := range cascadeType.SubgroupLayout {
 			shardNum := len(subgroupLayout.MinNodesByShard)
@@ -166,20 +328,26 @@ func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo t
 					}
 				}
 			}
+
+			for _, min_nodes := range subgroupLayout.MinNodesByShard {
+				leastRequiredLogicalNodes += min_nodes
+			}
 		}
 	}
 
 	r.NodeManagerMap[cascadeInfo.Name].Status.MaxReservedNodeId = maxReservedNodeId
 	r.NodeManagerMap[cascadeInfo.Name].Status.NextNodeIdToAssign = maxReservedNodeId + 1
-	log.Info(fmt.Sprintf("For Cascade %+v, max reserved node id is %v, next node id to assign is %v", cascadeInfo,
+	r.NodeManagerMap[cascadeInfo.Name].Status.LeastRequiredLogicalNodes = leastRequiredLogicalNodes
+	log.Info(fmt.Sprintf("For Cascade %+v, max reserved node id is %v, next node id to assign is %v, it needs at least %v logical nodes", cascadeInfo,
 		r.NodeManagerMap[cascadeInfo.Name].Status.MaxReservedNodeId,
-		r.NodeManagerMap[cascadeInfo.Name].Status.NextNodeIdToAssign))
+		r.NodeManagerMap[cascadeInfo.Name].Status.NextNodeIdToAssign,
+		r.NodeManagerMap[cascadeInfo.Name].Status.LeastRequiredLogicalNodes))
 }
 
 // labelsForCascade returns the labels for selecting the resources
 // belonging to the given cascade CR name.
 func labelsForCascade(name string) map[string]string {
-	return map[string]string{"app": "cascade", "cascade_cr": name}
+	return map[string]string{selectorKey: name}
 }
 
 // getPodNames returns the pod names of the array of pods passed in

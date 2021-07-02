@@ -56,6 +56,9 @@ type CascadeNodeManagerStatus struct {
 
 	// nextNodeIdToAssign is the next non-reserved node id to assign
 	NextNodeIdToAssign int `json:"nextNodeIdToAssign"`
+
+	// leastRequiredLogicalNodes is the sum of min_nodes for all shards
+	LeastRequiredLogicalNodes int `json:"leastRequiredLogicalNodes"`
 }
 
 //+kubebuilder:object:root=true

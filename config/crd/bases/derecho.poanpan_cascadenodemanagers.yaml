@@ -104,6 +104,10 @@ spec:
             type: object
           status:
             properties:
+              leastRequiredLogicalNodes:
+                description: leastRequiredLogicalNodes is the sum of min_nodes for
+                  all shards
+                type: integer
               maxReservedNodeId:
                 description: maxReservedNodeId is the max reserved node id calculated
                   from configMap
@@ -175,6 +179,7 @@ spec:
                   type: object
                 type: array
             required:
+            - leastRequiredLogicalNodes
             - maxReservedNodeId
             - nextNodeIdToAssign
             - typesStatus
