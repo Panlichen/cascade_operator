@@ -69,6 +69,7 @@ const (
 func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
 	log.Info("\n\n\n\t\t*** Entering Reconile Logic ***\n\n")
+	log.Info(fmt.Sprintf("Get request: %+v", req.NamespacedName))
 	// Fetch the cascade instance
 	cascade := &derechov1alpha1.Cascade{}
 	err := r.Get(ctx, req.NamespacedName, cascade)
@@ -85,12 +86,13 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// !!!TODO: maybe it is more reasonable to check the size info from cascade status?
 	// !!!TODO: delete
 
 	if cascade.Status.LogicalServerSize == 0 {
 		// this means we are creating the Cascade for the first time, we need to create NodeManager structure manually.
 		// TODO: create the CascadeNodeManager CR
+
+		// Parse the configMap, create pods and the headless service, allocate memory for CascadeReconciler.NodeManager
 		r.NodeManagerMap[req.Name] = new(derechov1alpha1.CascadeNodeManager)
 		configMapFinder := cascade.Spec.ConfigMapFinder.DeepCopy()
 		err = r.createNodeManager(ctx, req.NamespacedName, configMapFinder)
@@ -106,12 +108,12 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	var headless_service *v1.Service
-	err = r.Get(ctx, req.NamespacedName, headless_service)
+	// var headlessService *v1.Service
+	// NOTE: cannot just declare a pointer, but need a real pointer for r.Get
+	headlessService := &v1.Service{}
+	err = r.Get(ctx, req.NamespacedName, headlessService)
 	if err != nil && errors.IsNotFound(err) {
 		log.Info(fmt.Sprintf("Create the Headless Service Cascade %v", cascade.Name))
-		// Parse the configMap, create pods and the headless service, allocate memory for CascadeReconciler.NodeManager
-
 		r.createHeadlessService(ctx, cascade)
 	}
 
