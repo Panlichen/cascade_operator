@@ -83,11 +83,6 @@ spec:
               physicalServerSize:
                 description: physicalServerSize is the physical number of server nodes.
                 type: integer
-            required:
-            - clientSize
-            - logicalServerSize
-            - nodes
-            - physicalServerSize
             type: object
         type: object
     served: true

@@ -59,6 +59,9 @@ type CascadeNodeManagerStatus struct {
 
 	// leastRequiredLogicalNodes is the sum of min_nodes for all shards
 	LeastRequiredLogicalNodes int `json:"leastRequiredLogicalNodes"`
+
+	// maxLogicalNodes is the sum of min_nodes for all shards
+	MaxLogicalNodes int `json:"maxLogicalNodes"`
 }
 
 //+kubebuilder:object:root=true

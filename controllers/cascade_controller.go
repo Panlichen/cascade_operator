@@ -85,18 +85,18 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// Check if the headless service exists, which reflects the status of corresponding pods
 	// !!!TODO: maybe it is more reasonable to check the size info from cascade status?
 	// !!!TODO: delete
-	headless_service := &v1.Service{}
-	err = r.Get(ctx, req.NamespacedName, headless_service)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info(fmt.Sprintf("Create the Headless Service and Pods for Cascade %v", cascade.Name))
-		// Parse the configMap, create pods and the headless service, allocate memory for CascadeReconciler.NodeManager
+
+	if cascade.Status.LogicalServerSize == 0 {
+		// this means we are creating the Cascade for the first time, we need to create NodeManager structure manually.
 		// TODO: create the CascadeNodeManager CR
 		r.NodeManagerMap[req.Name] = new(derechov1alpha1.CascadeNodeManager)
 		configMapFinder := cascade.Spec.ConfigMapFinder.DeepCopy()
-		r.createNodeManager(ctx, req.NamespacedName, configMapFinder)
+		err = r.createNodeManager(ctx, req.NamespacedName, configMapFinder)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 
 		// Check if the user request enough logical nodes to satisfy the Cascade's need according to the json layout file
 		checkStat, checkErr := r.checkLogicalNodesRequest(cascade)
@@ -104,33 +104,37 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			log.Error(checkErr, "Has Not Requested enough")
 			return ctrl.Result{}, checkErr
 		}
+	}
+
+	var headless_service *v1.Service
+	err = r.Get(ctx, req.NamespacedName, headless_service)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info(fmt.Sprintf("Create the Headless Service Cascade %v", cascade.Name))
+		// Parse the configMap, create pods and the headless service, allocate memory for CascadeReconciler.NodeManager
 
 		r.createHeadlessService(ctx, cascade)
-
-		r.createPods(ctx, cascade.Spec.LogicalServerSize, cascade, true)
-		r.createPods(ctx, cascade.Spec.ClientSize, cascade, false)
 	}
 
-	// Update the cascade status with the pod names
-	// List the pods for this cascade's deployment
-	podList := &v1.PodList{}
-	listOpts := []client.ListOption{
-		client.InNamespace(cascade.Namespace),
-		client.MatchingLabels(labelsForCascade(cascade.Name)),
-	}
-	if err = r.List(ctx, podList, listOpts...); err != nil {
-		log.Error(err, "Failed to list pods", "cascade.Namespace", cascade.Namespace, "cascade.Name", cascade.Name)
-		return ctrl.Result{}, err
-	}
-	podNames := getPodNames(podList.Items)
+	// TODO: Currently only support adding an arbitraary number of nodes, or delete the whole Cascade. Deleting an arbitrary number of nodes requires collaboration with the layout information in the Cascade application.
 
-	// Update status.Nodes if needed
-	if !reflect.DeepEqual(podNames, cascade.Status.Nodes) {
-		cascade.Status.Nodes = podNames
-		err := r.Status().Update(ctx, cascade)
+	// Compare specified logical server number(cascade.Spec.LogicalServerSize) with current logical server number(cascade.Status.LogicalServerSize), and create miss pods.
+	// TODO: what if we add more nodes than the sum of MaxNodes from all shards?
+	specLogicalServerSize := cascade.Spec.LogicalServerSize
+	statusLogicalServerSize := cascade.Status.LogicalServerSize
+	if statusLogicalServerSize < specLogicalServerSize {
+		err = r.createPods(ctx, specLogicalServerSize-statusLogicalServerSize, cascade, true)
 		if err != nil {
-			log.Error(err, "Failed to update cascade status")
-			return ctrl.Result{}, err
+			log.Error(err, "Fail to create Server Pods")
+		}
+	}
+
+	// Compare specified logical client number(cascade.Spec.ClientSize) with current logical client number(cascade.Status.ClientSize), and create miss pods.
+	specClientSize := cascade.Spec.ClientSize
+	statusClientSize := cascade.Status.ClientSize
+	if statusClientSize < specClientSize {
+		err = r.createPods(ctx, specClientSize-statusClientSize, cascade, false)
+		if err != nil {
+			log.Error(err, "Fail to create Server Pods")
 		}
 	}
 
@@ -148,6 +152,7 @@ func (r *CascadeReconciler) createHeadlessService(ctx context.Context, cascade *
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cascade.Name,
 			Namespace: cascade.Namespace,
+			Labels:    serviceSelector,
 		},
 		Spec: v1.ServiceSpec{
 			Selector:  serviceSelector,
@@ -181,7 +186,7 @@ func (r *CascadeReconciler) createPods(ctx context.Context, createCnt int, casca
 
 		log.Info(fmt.Sprintf("Prepare to create pod %v", podName))
 
-		pod := &v1.Pod{}
+		var pod *v1.Pod
 		if isServer {
 			pod = &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -251,18 +256,46 @@ func (r *CascadeReconciler) createPods(ctx context.Context, createCnt int, casca
 			return err
 		}
 		log.Info(fmt.Sprintf("Create pod %v for Cascade %v successfully", podName, cascade.Name))
-		// update cascade.Status.LogicalServerSize
-		if isServer {
-			// TODO: consider update cascade.Status.PhysicalServerSize
-			cascade.Status.LogicalServerSize = createCnt
-		} else {
-			cascade.Status.ClientSize = createCnt
-		}
-		err = r.Status().Update(ctx, cascade)
+	}
+
+	// update cascade.Status.LogicalServerSize
+	if isServer {
+		// TODO: consider update cascade.Status.PhysicalServerSize
+		cascade.Status.LogicalServerSize = createCnt
+		err := r.Status().Update(ctx, cascade)
 		if err != nil {
 			log.Error(err, "Failed to update cascade status")
 			return err
 		}
+	} else {
+		cascade.Status.ClientSize = createCnt
+		err := r.Status().Update(ctx, cascade)
+		if err != nil {
+			log.Error(err, "Failed to update cascade status")
+			return err
+		}
+	}
+
+	// Update the cascade status with the pod names
+	podList := &v1.PodList{}
+	listOpts := []client.ListOption{
+		client.InNamespace(cascade.Namespace),
+		client.MatchingLabels(labelsForCascade(cascade.Name)),
+	}
+	if err := r.List(ctx, podList, listOpts...); err != nil {
+		log.Error(err, "Failed to list pods", "cascade.Namespace", cascade.Namespace, "cascade.Name", cascade.Name)
+		return err
+	}
+	podNames := getPodNames(podList.Items)
+
+	// Update status.Nodes if needed
+	if !reflect.DeepEqual(podNames, cascade.Status.Nodes) {
+		cascade.Status.Nodes = podNames
+	}
+	err := r.Status().Update(ctx, cascade)
+	if err != nil {
+		log.Error(err, "Failed to update cascade status")
+		return err
 	}
 
 	// after assign nodes, update NextNodeIdToAssign status for current Cascade.
@@ -275,17 +308,19 @@ func (r *CascadeReconciler) checkLogicalNodesRequest(cascade *derechov1alpha1.Ca
 	if cascade.Spec.LogicalServerSize >= r.NodeManagerMap[cascade.Name].Status.LeastRequiredLogicalNodes {
 		return true, nil
 	} else {
-		return false, goerrors.New("Not Request Enough Logical Nodes")
+		return false, goerrors.New("not request enough logical nodes")
 	}
 }
 
 // createNodeManager parse the json from the configMap user defined
-func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo types.NamespacedName, configMapFinder *derechov1alpha1.CascadeConfigMapFinder) {
+func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo types.NamespacedName, configMapFinder *derechov1alpha1.CascadeConfigMapFinder) error {
 	log := ctrllog.FromContext(ctx)
 	realConfigMap := &v1.ConfigMap{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: cascadeInfo.Namespace, Name: configMapFinder.Name}, realConfigMap)
 	if err != nil {
-		// TODO: do something
+		// if cannot find the config map, we cannot continue create other resources for Cascade
+		log.Error(err, fmt.Sprintf("Fail to get the ConfigMap %v/%v", cascadeInfo.Namespace, configMapFinder.Name))
+		return err
 	}
 	jsonStr := realConfigMap.Data[configMapFinder.JsonItem]
 	log.Info(fmt.Sprintf("Get the jsonStr with length %v", len(jsonStr)))
@@ -308,6 +343,7 @@ func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo t
 
 	maxReservedNodeId := -1
 	leastRequiredLogicalNodes := 0
+	maxLogicalNodes := 0
 	for typeSeq, cascadeType := range r.NodeManagerMap[cascadeInfo.Name].Status.TypesStatus {
 		for subgroupSeq, subgroupLayout := range cascadeType.SubgroupLayout {
 			shardNum := len(subgroupLayout.MinNodesByShard)
@@ -332,16 +368,21 @@ func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo t
 			for _, min_nodes := range subgroupLayout.MinNodesByShard {
 				leastRequiredLogicalNodes += min_nodes
 			}
+			for _, max_nodes := range subgroupLayout.MaxNodesByShard {
+				maxLogicalNodes += max_nodes
+			}
 		}
 	}
 
 	r.NodeManagerMap[cascadeInfo.Name].Status.MaxReservedNodeId = maxReservedNodeId
 	r.NodeManagerMap[cascadeInfo.Name].Status.NextNodeIdToAssign = maxReservedNodeId + 1
 	r.NodeManagerMap[cascadeInfo.Name].Status.LeastRequiredLogicalNodes = leastRequiredLogicalNodes
+	r.NodeManagerMap[cascadeInfo.Name].Status.MaxLogicalNodes = maxLogicalNodes
 	log.Info(fmt.Sprintf("For Cascade %+v, max reserved node id is %v, next node id to assign is %v, it needs at least %v logical nodes", cascadeInfo,
 		r.NodeManagerMap[cascadeInfo.Name].Status.MaxReservedNodeId,
 		r.NodeManagerMap[cascadeInfo.Name].Status.NextNodeIdToAssign,
 		r.NodeManagerMap[cascadeInfo.Name].Status.LeastRequiredLogicalNodes))
+	return nil
 }
 
 // labelsForCascade returns the labels for selecting the resources

@@ -50,16 +50,16 @@ type CascadeStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Nodes are the names of the cascade pods
-	Nodes []string `json:"nodes"`
+	Nodes []string `json:"nodes,omitempty"`
 
 	// physicalServerSize is the physical number of server nodes.
-	PhysicalServerSize int `json:"physicalServerSize"`
+	PhysicalServerSize int `json:"physicalServerSize,omitempty"`
 	// logicalServerSize is the logical number of server nodes, which means that overlapped nodes
 	// are counted for each appearance.
-	LogicalServerSize int `json:"logicalServerSize"`
+	LogicalServerSize int `json:"logicalServerSize,omitempty"`
 
 	// clientSize is current number of client nodes.
-	ClientSize int `json:"clientSize"`
+	ClientSize int `json:"clientSize,omitempty"`
 }
 
 //+kubebuilder:object:root=true
