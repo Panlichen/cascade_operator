@@ -29,6 +29,8 @@ type CascadeConfigMapFinder struct {
 	Name string `json:"name"`
 	// jsonItem indicates the name of the layout json file item inside the ConfigMap
 	JsonItem string `json:"jsonItem"`
+	// cfgTemplateItem indicates the name of the derecho.cfg.template file item inside the ConfigMap
+	CfgTemplateItem string `json:"cfgTemplateItem"`
 }
 
 // CascadeSpec defines the desired state of Cascade

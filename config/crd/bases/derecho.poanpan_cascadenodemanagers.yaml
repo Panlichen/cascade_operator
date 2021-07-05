@@ -104,6 +104,9 @@ spec:
             type: object
           status:
             properties:
+              leaderID:
+                description: leaderID is the leader id for this Cascade
+                type: integer
               leastRequiredLogicalNodes:
                 description: leastRequiredLogicalNodes is the sum of min_nodes for
                   all shards
@@ -182,6 +185,7 @@ spec:
                   type: object
                 type: array
             required:
+            - leaderID
             - leastRequiredLogicalNodes
             - maxLogicalNodes
             - maxReservedNodeId

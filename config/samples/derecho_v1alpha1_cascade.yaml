@@ -1,16 +1,3 @@
-apiVersion: derecho.poanpan/v1alpha1
-kind: Cascade
-metadata:
-  name: cascade-sample
-spec:
-  # Add fields here
-  logicalServerSize: 4
-  clientSize: 1
-  configMapFinder:
-    name: cascade-gpu-cfg-template
-    jsonItem: layout.json
-
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -297,3 +284,16 @@ data:
                             ]
         }
     ]
+---
+apiVersion: derecho.poanpan/v1alpha1
+kind: Cascade
+metadata:
+  name: cascade-sample
+spec:
+  # Add fields here
+  logicalServerSize: 4
+  clientSize: 1
+  configMapFinder:
+    name: cascade-gpu-cfg-template
+    jsonItem: layout.json
+    cfgTemplateItem: derecho.cfg.template

@@ -48,45 +48,7 @@ type CascadeReconciler struct {
 const (
 	selectorKey      string = "cascadeName"
 	cascadeFinalizer string = "derecho.poanpan"
-)
-
-var (
-	serverContainers []v1.Container = []v1.Container{{
-		Image: "poanpan/cascade:upgrade-cascade-gpu",
-		Name:  "server",
-		// TODO: change command to start server
-		Command: []string{"sh", "-c", "/usr/sbin/sshd && echo I am server && sleep 2592000"},
-		Resources: v1.ResourceRequirements{
-			Requests: v1.ResourceList{
-				v1.ResourceCPU:         resource.MustParse("2"),
-				v1.ResourceMemory:      resource.MustParse("8Gi"),
-				"openshift.io/mlx5_vf": resource.MustParse("1"),
-			},
-			Limits: v1.ResourceList{
-				v1.ResourceCPU:         resource.MustParse("10"),
-				v1.ResourceMemory:      resource.MustParse("20Gi"),
-				"openshift.io/mlx5_vf": resource.MustParse("1")},
-		},
-	}}
-	clientContainers []v1.Container = []v1.Container{{
-		// TODO: need a light client image
-		Image: "poanpan/cascade:upgrade-cascade-gpu",
-		Name:  "client",
-		// TODO: change command to start client
-		Command: []string{"sh", "-c", "/usr/sbin/sshd && echo I am client && sleep 2592000"},
-		Resources: v1.ResourceRequirements{
-			// TODO: client may need less resource
-			Requests: v1.ResourceList{
-				v1.ResourceCPU:         resource.MustParse("2"),
-				v1.ResourceMemory:      resource.MustParse("8Gi"),
-				"openshift.io/mlx5_vf": resource.MustParse("1"),
-			},
-			Limits: v1.ResourceList{
-				v1.ResourceCPU:         resource.MustParse("10"),
-				v1.ResourceMemory:      resource.MustParse("20Gi"),
-				"openshift.io/mlx5_vf": resource.MustParse("1")},
-		},
-	}}
+	volumeName       string = "layout-and-cfg-template"
 )
 
 //+kubebuilder:rbac:groups=derecho.poanpan,resources=cascades,verbs=get;list;watch;create;update;patch;delete
@@ -285,49 +247,68 @@ func (r *CascadeReconciler) createHeadlessService(ctx context.Context, log logr.
 
 func (r *CascadeReconciler) createPods(ctx context.Context, log logr.Logger, createCnt int, cascade *derechov1alpha1.Cascade, isServer bool) error {
 	// TODO: here we use the un-reserved nodes directly. After we determine how to use reserved and overlapped node ids, we need to redesign this function
-	nodeId := r.NodeManagerMap[cascade.Name].Status.NextNodeIdToAssign
+	nodeID := r.NodeManagerMap[cascade.Name].Status.NextNodeIdToAssign
 	serviceSelector := make(map[string]string)
 	serviceSelector[selectorKey] = cascade.Name
+
+	sriovAnnotation := make(map[string]string)
+	sriovAnnotation["k8s.v1.cni.cncf.io/networks"] = "sriov-net"
+
+	leaderID := r.NodeManagerMap[cascade.Name].Status.LeaderID
+	leader := cascade.Name + "-server-" + fmt.Sprint(leaderID)
 
 	// create pods as needed
 	for i := 0; i < createCnt; i++ {
 		var podName string
-
-		var podSpec v1.PodSpec
 		if isServer {
-			podName = cascade.Name + "-server-" + fmt.Sprint(nodeId)
-			podSpec = v1.PodSpec{
-				Hostname:   podName,
-				Subdomain:  cascade.Name,
-				Containers: serverContainers,
-				// the default container RestartPolicy is Always, very well.
-			}
+			podName = cascade.Name + "-server-" + fmt.Sprint(nodeID)
 		} else {
-			podName = cascade.Name + "-client-" + fmt.Sprint(nodeId)
-			podSpec = v1.PodSpec{
-				Hostname:   podName,
-				Subdomain:  cascade.Name,
-				Containers: clientContainers,
-				// the default container RestartPolicy is Always, very well.
-			}
+			podName = cascade.Name + "-client-" + fmt.Sprint(nodeID)
 		}
 		pod := &v1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      podName,
-				Namespace: cascade.Namespace,
-				Labels:    serviceSelector,
+				Name:        podName,
+				Namespace:   cascade.Namespace,
+				Labels:      serviceSelector,
+				Annotations: sriovAnnotation,
 			},
-			Spec: podSpec,
+			Spec: v1.PodSpec{
+				Hostname:   podName,
+				Subdomain:  cascade.Name,
+				Containers: getContainers(leader, nodeID, isServer),
+				// the default container RestartPolicy is Always, very well.
+				Volumes: []v1.Volume{{
+					Name: volumeName,
+					VolumeSource: v1.VolumeSource{
+						ConfigMap: &v1.ConfigMapVolumeSource{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: cascade.Spec.ConfigMapFinder.Name,
+							},
+							Items: []v1.KeyToPath{
+								{
+									Key:  cascade.Spec.ConfigMapFinder.CfgTemplateItem,
+									Path: cascade.Spec.ConfigMapFinder.CfgTemplateItem,
+								},
+								{
+									Key:  cascade.Spec.ConfigMapFinder.JsonItem,
+									Path: cascade.Spec.ConfigMapFinder.JsonItem,
+								},
+							},
+						},
+					},
+					// ConfigMap: &v1.ConfigMapVolumeSource{},
+				}},
+			},
 		}
 		// update the temporary variable, not to update r.NodeManagerMap[cascade.Name].Status.NextNodeIdToAssign until all pods are created successfully
-		nodeId++
-		log.Info(fmt.Sprintf("Prepare to create pod %v", podName))
+		nodeID++
 		err := r.Create(ctx, pod)
 		if err != nil {
 			log.Error(err, fmt.Sprintf("Failed to create pod %v/%v", cascade.Namespace, podName))
 			return err
 		}
 		log.Info(fmt.Sprintf("Create pod %v for Cascade %v successfully", podName, cascade.Name))
+		// TODO: when creating leader, should we wait until it's ready?
 	}
 
 	// update cascade.Status.LogicalServerSize
@@ -371,9 +352,74 @@ func (r *CascadeReconciler) createPods(ctx context.Context, log logr.Logger, cre
 	}
 
 	// after assign nodes, update NextNodeIdToAssign status for current Cascade.
-	r.NodeManagerMap[cascade.Name].Status.NextNodeIdToAssign = nodeId
+	r.NodeManagerMap[cascade.Name].Status.NextNodeIdToAssign = nodeID
 
 	return nil
+}
+
+func getContainers(leader string, nodeID int, isServer bool) []v1.Container {
+
+	if isServer {
+		command := fmt.Sprintf("SELF_FULL=`cat /etc/hosts | grep $HOSTNAME | awk '{print $2}'` && LEADER=%v && LEADER_FULL=${SELF_FULL/$HOSTNAME/$LEADER} && bash scripts/config-cascade.sh $LEADER_FULL $SELF_FULL %v verbs `ibv_devices | grep mlx | awk '{print $1}'` && /usr/sbin/sshd && echo I am server && sleep 2592000", leader, nodeID)
+		return []v1.Container{{
+			Image:           "poanpan/cascade:upgrade-cascade-gpu",
+			ImagePullPolicy: v1.PullIfNotPresent,
+			SecurityContext: &v1.SecurityContext{
+				Capabilities: &v1.Capabilities{
+					Add: []v1.Capability{"IPC_LOCK"},
+				},
+			},
+			VolumeMounts: []v1.VolumeMount{{
+				Name:      volumeName,
+				MountPath: "/root/config",
+			}},
+			Name: "server",
+			// TODO: change command to start server
+			Command: []string{"bash", "-c", command},
+			Resources: v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceCPU:         resource.MustParse("2"),
+					v1.ResourceMemory:      resource.MustParse("8Gi"),
+					"openshift.io/mlx5_vf": resource.MustParse("1"),
+				},
+				Limits: v1.ResourceList{
+					v1.ResourceCPU:         resource.MustParse("10"),
+					v1.ResourceMemory:      resource.MustParse("20Gi"),
+					"openshift.io/mlx5_vf": resource.MustParse("1")},
+			},
+		}}
+	} else {
+		command := fmt.Sprintf("SELF_FULL=`cat /etc/hosts | grep $HOSTNAME | awk '{print $2}'` && LEADER=%v && LEADER_FULL=${SELF_FULL/$HOSTNAME/$LEADER} && bash scripts/config-cascade.sh $LEADER_FULL $SELF_FULL %v verbs `ibv_devices | grep mlx | awk '{print $1}'` && /usr/sbin/sshd && echo I am client && sleep 2592000", leader, nodeID)
+		return []v1.Container{{
+			// TODO: need a light client image
+			Image:           "poanpan/cascade:upgrade-cascade-gpu",
+			ImagePullPolicy: v1.PullIfNotPresent,
+			SecurityContext: &v1.SecurityContext{
+				Capabilities: &v1.Capabilities{
+					Add: []v1.Capability{"IPC_LOCK"},
+				},
+			},
+			VolumeMounts: []v1.VolumeMount{{
+				Name:      volumeName,
+				MountPath: "/root/config",
+			}},
+			Name: "client",
+			// TODO: change command to start client
+			Command: []string{"bash", "-c", command},
+			Resources: v1.ResourceRequirements{
+				// TODO: client may need less resource
+				Requests: v1.ResourceList{
+					v1.ResourceCPU:         resource.MustParse("2"),
+					v1.ResourceMemory:      resource.MustParse("8Gi"),
+					"openshift.io/mlx5_vf": resource.MustParse("1"),
+				},
+				Limits: v1.ResourceList{
+					v1.ResourceCPU:         resource.MustParse("10"),
+					v1.ResourceMemory:      resource.MustParse("20Gi"),
+					"openshift.io/mlx5_vf": resource.MustParse("1")},
+			},
+		}}
+	}
 }
 
 func (r *CascadeReconciler) checkLogicalNodesRequest(cascade *derechov1alpha1.Cascade) (bool, error) {
@@ -449,6 +495,10 @@ func (r *CascadeReconciler) createNodeManager(ctx context.Context, log logr.Logg
 	r.NodeManagerMap[cascadeInfo.Name].Status.NextNodeIdToAssign = maxReservedNodeId + 1
 	r.NodeManagerMap[cascadeInfo.Name].Status.LeastRequiredLogicalNodes = leastRequiredLogicalNodes
 	r.NodeManagerMap[cascadeInfo.Name].Status.MaxLogicalNodes = maxLogicalNodes
+
+	// When we create a Cascade for the first time, we assign the first node id to use as the leader ID.
+	r.NodeManagerMap[cascadeInfo.Name].Status.LeaderID = r.NodeManagerMap[cascadeInfo.Name].Status.NextNodeIdToAssign
+
 	log.Info(fmt.Sprintf("For Cascade %+v, max reserved node id is %v, next node id to assign is %v, it needs at least %v logical nodes", cascadeInfo,
 		r.NodeManagerMap[cascadeInfo.Name].Status.MaxReservedNodeId,
 		r.NodeManagerMap[cascadeInfo.Name].Status.NextNodeIdToAssign,

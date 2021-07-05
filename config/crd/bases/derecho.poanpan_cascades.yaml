@@ -44,6 +44,10 @@ spec:
                 description: CascadeConfigMapFinder is where the controller gets layout
                   info for a Cascade instance
                 properties:
+                  cfgTemplateItem:
+                    description: cfgTemplateItem indicates the name of the derecho.cfg.template
+                      file item inside the ConfigMap
+                    type: string
                   jsonItem:
                     description: jsonItem indicates the name of the layout json file
                       item inside the ConfigMap
@@ -53,6 +57,7 @@ spec:
                       the user
                     type: string
                 required:
+                - cfgTemplateItem
                 - jsonItem
                 - name
                 type: object

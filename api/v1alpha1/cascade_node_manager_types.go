@@ -62,6 +62,9 @@ type CascadeNodeManagerStatus struct {
 
 	// maxLogicalNodes is the sum of min_nodes for all shards
 	MaxLogicalNodes int `json:"maxLogicalNodes"`
+
+	// leaderID is the leader id for this Cascade
+	LeaderID int `json:"leaderID"`
 }
 
 //+kubebuilder:object:root=true
