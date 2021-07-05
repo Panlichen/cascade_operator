@@ -47,6 +47,45 @@ const (
 	selectorKey string = "cascadeName"
 )
 
+var (
+	serverContainers []v1.Container = []v1.Container{{
+		Image: "poanpan/cascade:upgrade-cascade-gpu",
+		Name:  "server",
+		// TODO: change command to start server
+		Command: []string{"sh", "-c", "/usr/sbin/sshd && echo I am server && sleep 2592000"},
+		Resources: v1.ResourceRequirements{
+			Requests: v1.ResourceList{
+				v1.ResourceCPU:         resource.MustParse("2"),
+				v1.ResourceMemory:      resource.MustParse("8Gi"),
+				"openshift.io/mlx5_vf": resource.MustParse("1"),
+			},
+			Limits: v1.ResourceList{
+				v1.ResourceCPU:         resource.MustParse("10"),
+				v1.ResourceMemory:      resource.MustParse("20Gi"),
+				"openshift.io/mlx5_vf": resource.MustParse("1")},
+		},
+	}}
+	clientContainers []v1.Container = []v1.Container{{
+		// TODO: need a light client image
+		Image: "poanpan/cascade:upgrade-cascade-gpu",
+		Name:  "client",
+		// TODO: change command to start client
+		Command: []string{"sh", "-c", "/usr/sbin/sshd && echo I am client && sleep 2592000"},
+		Resources: v1.ResourceRequirements{
+			// TODO: client may need less resource
+			Requests: v1.ResourceList{
+				v1.ResourceCPU:         resource.MustParse("2"),
+				v1.ResourceMemory:      resource.MustParse("8Gi"),
+				"openshift.io/mlx5_vf": resource.MustParse("1"),
+			},
+			Limits: v1.ResourceList{
+				v1.ResourceCPU:         resource.MustParse("10"),
+				v1.ResourceMemory:      resource.MustParse("20Gi"),
+				"openshift.io/mlx5_vf": resource.MustParse("1")},
+		},
+	}}
+)
+
 //+kubebuilder:rbac:groups=derecho.poanpan,resources=cascades,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=derecho.poanpan,resources=cascades/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=derecho.poanpan,resources=cascades/finalizers,verbs=update
@@ -123,6 +162,9 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// TODO: what if we add more nodes than the sum of MaxNodes from all shards?
 	specLogicalServerSize := cascade.Spec.LogicalServerSize
 	statusLogicalServerSize := cascade.Status.LogicalServerSize
+
+	log.Info(fmt.Sprintf("specLogicalServerSize is %v, statusLogicalServerSize is %v", specLogicalServerSize, statusLogicalServerSize))
+
 	if statusLogicalServerSize < specLogicalServerSize {
 		err = r.createPods(ctx, specLogicalServerSize-statusLogicalServerSize, cascade, true)
 		if err != nil {
@@ -133,6 +175,9 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Compare specified logical client number(cascade.Spec.ClientSize) with current logical client number(cascade.Status.ClientSize), and create miss pods.
 	specClientSize := cascade.Spec.ClientSize
 	statusClientSize := cascade.Status.ClientSize
+
+	log.Info(fmt.Sprintf("specClientSize is %v, statusClientSize is %v", specClientSize, statusClientSize))
+
 	if statusClientSize < specClientSize {
 		err = r.createPods(ctx, specClientSize-statusClientSize, cascade, false)
 		if err != nil {
@@ -182,76 +227,37 @@ func (r *CascadeReconciler) createPods(ctx context.Context, createCnt int, casca
 
 	// create pods as needed
 	for i := 0; i < createCnt; i++ {
-		podName := cascade.Name + "-" + fmt.Sprint(nodeId)
-		// update the temporary variable, not to update r.NodeManagerMap[cascade.Name].Status.NextNodeIdToAssign until all pods are created successfully
-		nodeId++
+		var podName string
 
-		log.Info(fmt.Sprintf("Prepare to create pod %v", podName))
-
-		var pod *v1.Pod
+		var podSpec v1.PodSpec
 		if isServer {
-			pod = &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      podName,
-					Namespace: cascade.Namespace,
-					Labels:    serviceSelector,
-				},
-				Spec: v1.PodSpec{
-					Hostname:  podName,
-					Subdomain: cascade.Name,
-					Containers: []v1.Container{{
-						Image: "poanpan/cascade:upgrade-cascade-gpu",
-						Name:  "cascade",
-						// TODO: change command to start server
-						Command: []string{"sh", "-c", "/usr/sbin/sshd && sleep 2592000"},
-						Resources: v1.ResourceRequirements{
-							Requests: v1.ResourceList{
-								v1.ResourceCPU:         resource.MustParse("2"),
-								v1.ResourceMemory:      resource.MustParse("8Gi"),
-								"openshift.io/mlx5_vf": resource.MustParse("1"),
-							},
-							Limits: v1.ResourceList{
-								v1.ResourceCPU:         resource.MustParse("10"),
-								v1.ResourceMemory:      resource.MustParse("20Gi"),
-								"openshift.io/mlx5_vf": resource.MustParse("1")},
-						},
-					}},
-					// the default container RestartPolicy is Always, very well.
-				},
+			podName = cascade.Name + "-server-" + fmt.Sprint(nodeId)
+			podSpec = v1.PodSpec{
+				Hostname:   podName,
+				Subdomain:  cascade.Name,
+				Containers: serverContainers,
+				// the default container RestartPolicy is Always, very well.
 			}
 		} else {
-			pod = &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      podName,
-					Namespace: cascade.Namespace,
-					Labels:    serviceSelector,
-				},
-				Spec: v1.PodSpec{
-					Hostname:  podName,
-					Subdomain: cascade.Name,
-					Containers: []v1.Container{{
-						// TODO: need a light client image
-						Image: "poanpan/cascade:upgrade-cascade-gpu",
-						Name:  "cascade",
-						// TODO: change command to start client
-						Command: []string{"sh", "-c", "/usr/sbin/sshd && sleep 2592000"},
-						Resources: v1.ResourceRequirements{
-							// TODO: client need less resource
-							Requests: v1.ResourceList{
-								v1.ResourceCPU:         resource.MustParse("2"),
-								v1.ResourceMemory:      resource.MustParse("8Gi"),
-								"openshift.io/mlx5_vf": resource.MustParse("1"),
-							},
-							Limits: v1.ResourceList{
-								v1.ResourceCPU:         resource.MustParse("10"),
-								v1.ResourceMemory:      resource.MustParse("20Gi"),
-								"openshift.io/mlx5_vf": resource.MustParse("1")},
-						},
-					}},
-					// the default container RestartPolicy is Always, very well.
-				},
+			podName = cascade.Name + "-client-" + fmt.Sprint(nodeId)
+			podSpec = v1.PodSpec{
+				Hostname:   podName,
+				Subdomain:  cascade.Name,
+				Containers: clientContainers,
+				// the default container RestartPolicy is Always, very well.
 			}
 		}
+		pod := &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      podName,
+				Namespace: cascade.Namespace,
+				Labels:    serviceSelector,
+			},
+			Spec: podSpec,
+		}
+		// update the temporary variable, not to update r.NodeManagerMap[cascade.Name].Status.NextNodeIdToAssign until all pods are created successfully
+		nodeId++
+		log.Info(fmt.Sprintf("Prepare to create pod %v", podName))
 		err := r.Create(ctx, pod)
 		if err != nil {
 			log.Error(err, fmt.Sprintf("Failed to create pod %v/%v", cascade.Namespace, podName))
