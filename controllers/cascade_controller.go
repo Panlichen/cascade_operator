@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/go-logr/logr"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -31,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/json"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	derechov1alpha1 "github.com/Panlichen/cascade_operator/api/v1alpha1"
@@ -44,7 +46,8 @@ type CascadeReconciler struct {
 }
 
 const (
-	selectorKey string = "cascadeName"
+	selectorKey      string = "cascadeName"
+	cascadeFinalizer string = "derecho.poanpan"
 )
 
 var (
@@ -126,15 +129,46 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// !!!TODO: delete
+	// Check if the Cascade instance is marked to be deleted, which is
+	// indicated by the deletion timestamp being set.
+	isCascadeMarkedToBeDeleted := cascade.GetDeletionTimestamp() != nil
+	if isCascadeMarkedToBeDeleted {
+		if controllerutil.ContainsFinalizer(cascade, cascadeFinalizer) {
+			// Run finalization logic for cascadeFinalizer. If the
+			// finalization logic fails, don't remove the finalizer so
+			// that we can retry during the next reconciliation.
+			if err := r.finalizeCascade(ctx, log, cascade); err != nil {
+				return ctrl.Result{}, err
+			}
+			// Remove cascadeFinalizer. Once all finalizers have been
+			// removed, the object will be deleted.
+			controllerutil.RemoveFinalizer(cascade, cascadeFinalizer)
+			err := r.Update(ctx, cascade)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, err
+	}
+
+	// Add finalizer for this CR
+	if !controllerutil.ContainsFinalizer(cascade, cascadeFinalizer) {
+		controllerutil.AddFinalizer(cascade, cascadeFinalizer)
+		err = r.Update(ctx, cascade)
+		if err != nil {
+			log.Error(err, fmt.Sprintf("Add Finalizer for cascade %v failed", req.NamespacedName))
+			return ctrl.Result{}, err
+		}
+	}
 
 	if cascade.Status.LogicalServerSize == 0 {
 		// this means we are creating the Cascade for the first time, we need to create NodeManager structure manually.
-		// TODO: create the CascadeNodeManager CR
+		// TODO: create the CascadeNodeManager CR, from tutorial: Note The Node field is just to illustrate an example of a Status field. In real cases, it would be recommended to use [Conditions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties).
 
 		// Parse the configMap, create pods and the headless service, allocate memory for CascadeReconciler.NodeManager
 		r.NodeManagerMap[req.Name] = new(derechov1alpha1.CascadeNodeManager)
 		configMapFinder := cascade.Spec.ConfigMapFinder.DeepCopy()
-		err = r.createNodeManager(ctx, req.NamespacedName, configMapFinder)
+		err = r.createNodeManager(ctx, log, req.NamespacedName, configMapFinder)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -153,7 +187,7 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	err = r.Get(ctx, req.NamespacedName, headlessService)
 	if err != nil && errors.IsNotFound(err) {
 		log.Info(fmt.Sprintf("Create the Headless Service Cascade %v", cascade.Name))
-		r.createHeadlessService(ctx, cascade)
+		r.createHeadlessService(ctx, log, cascade)
 	}
 
 	// TODO: Currently only support adding an arbitraary number of nodes, or delete the whole Cascade. Deleting an arbitrary number of nodes requires collaboration with the layout information in the Cascade application.
@@ -166,7 +200,7 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	log.Info(fmt.Sprintf("specLogicalServerSize is %v, statusLogicalServerSize is %v", specLogicalServerSize, statusLogicalServerSize))
 
 	if statusLogicalServerSize < specLogicalServerSize {
-		err = r.createPods(ctx, specLogicalServerSize-statusLogicalServerSize, cascade, true)
+		err = r.createPods(ctx, log, specLogicalServerSize-statusLogicalServerSize, cascade, true)
 		if err != nil {
 			log.Error(err, "Fail to create Server Pods")
 		}
@@ -179,7 +213,7 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	log.Info(fmt.Sprintf("specClientSize is %v, statusClientSize is %v", specClientSize, statusClientSize))
 
 	if statusClientSize < specClientSize {
-		err = r.createPods(ctx, specClientSize-statusClientSize, cascade, false)
+		err = r.createPods(ctx, log, specClientSize-statusClientSize, cascade, false)
 		if err != nil {
 			log.Error(err, "Fail to create Server Pods")
 		}
@@ -188,10 +222,42 @@ func (r *CascadeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, nil
 }
 
-func (r *CascadeReconciler) createHeadlessService(ctx context.Context, cascade *derechov1alpha1.Cascade) error {
+func (r *CascadeReconciler) finalizeCascade(ctx context.Context, log logr.Logger, cascade *derechov1alpha1.Cascade) error {
+	log.Info(fmt.Sprintf("Finalize deleted Cascade: %v", cascade.Name))
+	// delete pods
+	for _, podName := range cascade.Status.Nodes {
+		podToDelete := &v1.Pod{}
+		namespacedName := types.NamespacedName{Name: podName, Namespace: cascade.Namespace}
+		err := r.Get(ctx, namespacedName, podToDelete)
+		if err != nil {
+			log.Error(err, fmt.Sprintf("Fail to get the pod to delete %v", namespacedName))
+			return err
+		}
+		// TODO: maybe parallel in goroutine?
+		err = r.Delete(ctx, podToDelete)
+		if err != nil {
+			log.Error(err, fmt.Sprintf("Fail to delete the pod to delete %v", namespacedName))
+			return err
+		}
+		log.Info(fmt.Sprintf("Delete pod %v", namespacedName))
+	}
+	headlessServiceToDelete := &v1.Service{}
+	namespacedName := types.NamespacedName{Name: cascade.Name, Namespace: cascade.Namespace}
+	err := r.Get(ctx, namespacedName, headlessServiceToDelete)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Fail to get the headless service to delete %v", namespacedName))
+	}
+	err = r.Delete(ctx, headlessServiceToDelete)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Fail to delete the headless service to delete %v", namespacedName))
+		return err
+	}
+	log.Info(fmt.Sprintf("Delete headless Service %v", namespacedName))
 
-	log := ctrllog.FromContext(ctx)
+	return nil
+}
 
+func (r *CascadeReconciler) createHeadlessService(ctx context.Context, log logr.Logger, cascade *derechov1alpha1.Cascade) error {
 	// create a headless service to provide fqdn
 	serviceSelector := make(map[string]string)
 	serviceSelector[selectorKey] = cascade.Name
@@ -217,9 +283,7 @@ func (r *CascadeReconciler) createHeadlessService(ctx context.Context, cascade *
 	return nil
 }
 
-func (r *CascadeReconciler) createPods(ctx context.Context, createCnt int, cascade *derechov1alpha1.Cascade, isServer bool) error {
-
-	log := ctrllog.FromContext(ctx)
+func (r *CascadeReconciler) createPods(ctx context.Context, log logr.Logger, createCnt int, cascade *derechov1alpha1.Cascade, isServer bool) error {
 	// TODO: here we use the un-reserved nodes directly. After we determine how to use reserved and overlapped node ids, we need to redesign this function
 	nodeId := r.NodeManagerMap[cascade.Name].Status.NextNodeIdToAssign
 	serviceSelector := make(map[string]string)
@@ -321,8 +385,7 @@ func (r *CascadeReconciler) checkLogicalNodesRequest(cascade *derechov1alpha1.Ca
 }
 
 // createNodeManager parse the json from the configMap user defined
-func (r *CascadeReconciler) createNodeManager(ctx context.Context, cascadeInfo types.NamespacedName, configMapFinder *derechov1alpha1.CascadeConfigMapFinder) error {
-	log := ctrllog.FromContext(ctx)
+func (r *CascadeReconciler) createNodeManager(ctx context.Context, log logr.Logger, cascadeInfo types.NamespacedName, configMapFinder *derechov1alpha1.CascadeConfigMapFinder) error {
 	realConfigMap := &v1.ConfigMap{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: cascadeInfo.Namespace, Name: configMapFinder.Name}, realConfigMap)
 	if err != nil {
